@@ -1,8 +1,5 @@
 import { OpenRouter } from "@openrouter/sdk";
-import type {
-  ChatMessages,
-  ChatContentItems,
-} from "@openrouter/sdk/models";
+import type { ChatMessages, ChatContentItems } from "@openrouter/sdk/models";
 import { SYSTEM_PROMPT } from "./ai-prompts";
 import type { AIResponse } from "@/types";
 
@@ -51,6 +48,8 @@ export async function chatWithAI(
       model: "moonshotai/kimi-k2.6",
       messages,
       stream: true,
+      // Limit reasoning effort to reduce thinking latency
+      reasoning: { effort: "minimal" },
     },
   });
 
