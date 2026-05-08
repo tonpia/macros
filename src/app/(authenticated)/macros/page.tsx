@@ -88,11 +88,19 @@ export default function MacrosPage() {
     carbs_g: number;
     fat_g: number;
   }) {
-    await fetch("/api/sheets/daily-goals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(g),
-    });
+    if (goals?.id) {
+      await fetch(`/api/sheets/daily-goals/${goals.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(g),
+      });
+    } else {
+      await fetch("/api/sheets/daily-goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(g),
+      });
+    }
     fetchData();
   }
 
