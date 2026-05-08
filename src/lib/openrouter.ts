@@ -49,7 +49,7 @@ export async function chatWithAI(
       messages,
       stream: true,
       // Limit reasoning effort to reduce thinking latency
-      reasoning: { effort: "minimal" },
+      reasoning: { effort: "none" },
     },
   });
 
