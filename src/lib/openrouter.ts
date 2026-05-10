@@ -1,7 +1,7 @@
 import { OpenRouter } from "@openrouter/sdk";
 import type { ChatMessages, ChatContentItems } from "@openrouter/sdk/models";
-import { SYSTEM_PROMPT } from "./ai-prompts";
-import type { AIResponse } from "@/types";
+import { buildSystemPrompt } from "./ai-prompts";
+import type { AIResponse, CommonFood } from "@/types";
 
 function getClient(): OpenRouter {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -34,6 +34,7 @@ function parseAIResponse(raw: string): AIResponse {
 export async function* streamChatWithAI(
   userMessage: string,
   images?: string[],
+  commonFoods?: CommonFood[],
 ): AsyncGenerator<{ type: "reasoning" | "content" | "done"; content?: string; response?: AIResponse }> {
   const openrouter = getClient();
 
@@ -57,8 +58,10 @@ export async function* streamChatWithAI(
       ? userMessage
       : contentParts;
 
+  const systemPrompt = buildSystemPrompt(commonFoods ?? []);
+
   const messages: ChatMessages[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     { role: "user", content: userContent },
   ];
 
@@ -67,27 +70,24 @@ export async function* streamChatWithAI(
       model: "moonshotai/kimi-k2.6",
       messages,
       stream: true,
-      reasoning: { effort: "minimal" },
+      reasoning: { effort: "medium" },
     },
   });
 
   let raw = "";
   for await (const chunk of stream) {
-    const choice = chunk.choices[0];
-    if (!choice?.delta) continue;
+    const delta = chunk.choices[0]?.delta;
+    if (!delta) continue;
 
-    // Check for reasoning content
-    const delta = choice.delta as Record<string, unknown>;
-    const reasoning = delta.reasoning as string | undefined;
-    if (reasoning) {
-      yield { type: "reasoning", content: reasoning };
-      continue;
+    // Check for reasoning content (thinking phase)
+    if (delta.reasoning) {
+      yield { type: "reasoning", content: delta.reasoning };
     }
 
-    const c = delta.content as string | undefined;
-    if (c) {
-      raw += c;
-      yield { type: "content", content: c };
+    // Regular content
+    if (delta.content) {
+      raw += delta.content;
+      yield { type: "content", content: delta.content };
     }
   }
 
@@ -103,9 +103,10 @@ export async function* streamChatWithAI(
 export async function chatWithAI(
   userMessage: string,
   images?: string[],
+  commonFoods?: CommonFood[],
 ): Promise<AIResponse> {
   let result: AIResponse | undefined;
-  for await (const event of streamChatWithAI(userMessage, images)) {
+  for await (const event of streamChatWithAI(userMessage, images, commonFoods)) {
     if (event.type === "done" && event.response) {
       result = event.response;
     }

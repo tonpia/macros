@@ -1,4 +1,6 @@
-export const SYSTEM_PROMPT = `You are a fitness tracking assistant. The user will send you text, images, or both.
+import type { CommonFood } from "@/types";
+
+const BASE_PROMPT = `You are a fitness tracking assistant. The user will send you text, images, or both.
 Your job is to classify the input and extract structured data.
 
 Always respond with valid JSON in this exact format (no markdown, no code fences, just raw JSON):
@@ -35,3 +37,23 @@ Important rules:
 - For nutrition labels, extract the EXACT values printed, do not estimate.
 - Always provide your best estimate even with low confidence.
 - Keep your message brief and conversational.`;
+
+export function buildSystemPrompt(commonFoods: CommonFood[]): string {
+  if (commonFoods.length === 0) return BASE_PROMPT;
+
+  const foodList = commonFoods
+    .map(
+      (f) =>
+        `- "${f.name}" (${f.serving_size}): ${f.calories} cal, ${f.protein_g}p/${f.carbs_g}c/${f.fat_g}f`
+    )
+    .join("\n");
+
+  return `${BASE_PROMPT}
+
+COMMON FOODS — the user has pre-registered these items with exact macros. When a food item in the user's meal matches or closely matches one of these, use the provided macros instead of estimating. Scale proportionally if the portion differs from the listed serving size.
+
+${foodList}`;
+}
+
+/** @deprecated Use buildSystemPrompt() instead */
+export const SYSTEM_PROMPT = BASE_PROMPT;

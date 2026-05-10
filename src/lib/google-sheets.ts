@@ -24,6 +24,10 @@ function getSpreadsheetId(): string {
   return id;
 }
 
+function quoteTab(tab: string): string {
+  return `'${tab}'`;
+}
+
 // ─── Generic CRUD operations ───
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,7 +38,7 @@ export async function getRows<T = any>(
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tab}!A:Z`,
+    range: `${quoteTab(tab)}!A:Z`,
   });
 
   const rows = res.data.values;
@@ -71,7 +75,7 @@ export async function appendRow(
   // Get headers first
   const headerRes = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tab}!1:1`,
+    range: `${quoteTab(tab)}!1:1`,
   });
 
   const headers = headerRes.data.values?.[0] as string[];
@@ -84,7 +88,7 @@ export async function appendRow(
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tab}!A:Z`,
+    range: `${quoteTab(tab)}!A:Z`,
     valueInputOption: "RAW",
     requestBody: { values: [row] },
   });
@@ -98,7 +102,7 @@ export async function updateRow(
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tab}!A:Z`,
+    range: `${quoteTab(tab)}!A:Z`,
   });
 
   const rows = res.data.values;
@@ -125,7 +129,7 @@ export async function updateRow(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tab}!A${rowIndex + 1}:Z${rowIndex + 1}`,
+    range: `${quoteTab(tab)}!A${rowIndex + 1}:Z${rowIndex + 1}`,
     valueInputOption: "RAW",
     requestBody: { values: [updatedRow] },
   });
@@ -140,7 +144,7 @@ export async function deleteRow(tab: string, id: string): Promise<boolean> {
   // Get all data to find the row
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${tab}!A:Z`,
+    range: `${quoteTab(tab)}!A:Z`,
   });
 
   const rows = res.data.values;

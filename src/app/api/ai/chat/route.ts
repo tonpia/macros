@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { streamChatWithAI } from "@/lib/openrouter";
+import { getRows } from "@/lib/google-sheets";
+import type { CommonFood } from "@/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,11 +14,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Fetch common foods to inject into the AI prompt
+    let commonFoods: CommonFood[] = [];
+    try {
+      commonFoods = await getRows<CommonFood>("common-foods");
+    } catch {
+      // Tab may not exist yet — proceed without common foods
+    }
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of streamChatWithAI(message || "", images)) {
+          for await (const event of streamChatWithAI(message || "", images, commonFoods)) {
             const data = JSON.stringify(event);
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }

@@ -46,6 +46,16 @@ export interface BodyLogEntry {
   photo_data: string;
 }
 
+export interface CommonFood {
+  id: string;
+  name: string; // e.g. "whey protein shake", "white rice 1 cup"
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  serving_size: string; // e.g. "1 scoop (30g)", "1 cup cooked"
+}
+
 // ─── AI response types ───
 
 export interface FoodEstimation {

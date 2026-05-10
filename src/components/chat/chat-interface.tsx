@@ -40,16 +40,25 @@ function loadMessages(sessionKey: string): ChatMessageType[] {
 function saveMessages(sessionKey: string, messages: ChatMessageType[]) {
   if (typeof window === "undefined") return;
   try {
-    // Don't persist images in localStorage to save space
     const toStore = messages.map((m) => ({
       ...m,
-      images: undefined, // strip base64 images
       isStreaming: false,
       isReasoning: false,
     }));
     localStorage.setItem(getStorageKey(sessionKey), JSON.stringify(toStore));
   } catch {
-    // localStorage full or unavailable — silently ignore
+    // localStorage full — try again without images
+    try {
+      const toStore = messages.map((m) => ({
+        ...m,
+        images: undefined,
+        isStreaming: false,
+        isReasoning: false,
+      }));
+      localStorage.setItem(getStorageKey(sessionKey), JSON.stringify(toStore));
+    } catch {
+      // Still failing — silently ignore
+    }
   }
 }
 
@@ -65,6 +74,7 @@ export default function ChatInterface({
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [reasoningText, setReasoningText] = useState("");
   const [isReasoning, setIsReasoning] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
@@ -72,17 +82,21 @@ export default function ChatInterface({
   // Load messages from localStorage on mount
   useEffect(() => {
     if (!initialized.current) {
-      initialized.current = true;
       const stored = loadMessages(sessionKey);
       if (stored.length > 0) {
         setMessages(stored);
       }
+      // Mark initialized after a tick so the save effect skips the load-triggered update
+      requestAnimationFrame(() => {
+        initialized.current = true;
+      });
     }
   }, [sessionKey]);
 
   // Persist messages to localStorage whenever they change
   useEffect(() => {
-    if (initialized.current && messages.length > 0) {
+    if (!initialized.current) return;
+    if (messages.length > 0) {
       saveMessages(sessionKey, messages);
     }
   }, [messages, sessionKey]);
@@ -94,6 +108,7 @@ export default function ChatInterface({
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setStreamingText("");
+    setReasoningText("");
     setIsReasoning(false);
     localStorage.removeItem(getStorageKey(sessionKey));
   }, [sessionKey]);
@@ -114,6 +129,7 @@ export default function ChatInterface({
     setPendingImages([]);
     setLoading(true);
     setStreamingText("");
+    setReasoningText("");
     setIsReasoning(false);
 
     try {
@@ -134,41 +150,38 @@ export default function ChatInterface({
       const decoder = new TextDecoder();
       let accumulated = "";
       let finalResponse: AIResponse | undefined;
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split("\n");
+        buffer += decoder.decode(value, { stream: true });
 
-        for (const line of lines) {
+        // Process complete SSE messages (separated by double newlines)
+        const parts = buffer.split("\n\n");
+        // Keep the last part in the buffer (may be incomplete)
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          const line = part.trim();
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
 
-          try {
-            const event = JSON.parse(jsonStr);
+          const event = JSON.parse(jsonStr);
 
-            if (event.type === "reasoning") {
-              setIsReasoning(true);
-            } else if (event.type === "content") {
-              setIsReasoning(false);
-              accumulated += event.content;
-              setStreamingText(accumulated);
-            } else if (event.type === "done") {
-              finalResponse = event.response;
-            } else if (event.type === "error") {
-              throw new Error(event.content);
-            }
-          } catch (parseErr) {
-            // Ignore malformed SSE lines
-            if (parseErr instanceof Error && parseErr.message !== "error") {
-              // Re-throw actual errors from the AI
-              if (jsonStr.includes('"type":"error"')) {
-                throw parseErr;
-              }
-            }
+          if (event.type === "reasoning") {
+            setIsReasoning(true);
+            setReasoningText((prev) => prev + (event.content || ""));
+          } else if (event.type === "content") {
+            setIsReasoning(false);
+            accumulated += event.content;
+            setStreamingText(accumulated);
+          } else if (event.type === "done") {
+            finalResponse = event.response;
+          } else if (event.type === "error") {
+            throw new Error(event.content);
           }
         }
       }
@@ -203,6 +216,7 @@ export default function ChatInterface({
     } finally {
       setLoading(false);
       setStreamingText("");
+      setReasoningText("");
       setIsReasoning(false);
     }
   }
@@ -265,9 +279,16 @@ export default function ChatInterface({
           <div className="flex justify-start">
             <div className="max-w-[85%] rounded-2xl bg-gray-800 px-4 py-3">
               {isReasoning ? (
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-500 border-t-blue-400" />
-                  <span className="text-xs text-gray-400">Thinking...</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-500 border-t-blue-400" />
+                    <span className="text-xs font-medium text-blue-400">Thinking...</span>
+                  </div>
+                  {reasoningText && (
+                    <p className="text-xs whitespace-pre-wrap text-gray-500 italic max-h-32 overflow-y-auto">
+                      {reasoningText}
+                    </p>
+                  )}
                 </div>
               ) : streamingText ? (
                 <p className="text-sm whitespace-pre-wrap text-gray-100">{streamingText}</p>

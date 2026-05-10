@@ -23,7 +23,7 @@ A personal fitness and nutrition tracker. The user logs food, workouts, and body
 
 ### Data Layer
 
-All data is in Google Sheets. The spreadsheet has four tabs:
+All data is in Google Sheets. The spreadsheet has five tabs:
 
 | Tab name       | Contains              |
 | -------------- | --------------------- |
@@ -31,6 +31,7 @@ All data is in Google Sheets. The spreadsheet has four tabs:
 | `workouts`     | Workout entries       |
 | `body-log`     | Weight + photo entries|
 | `daily-goals`  | Macro targets         |
+| `common-foods` | Pre-registered foods with exact macros |
 
 Generic CRUD helpers in `src/lib/google-sheets.ts`:
 
@@ -103,6 +104,11 @@ interface BodyLogEntry {
 
 interface DailyGoals {
   id: string; timestamp: string; date_effective: string;
+  calories: number; protein_g: number; carbs_g: number; fat_g: number;
+}
+
+interface CommonFood {
+  id: string; name: string; serving_size: string;
   calories: number; protein_g: number; carbs_g: number; fat_g: number;
 }
 ```

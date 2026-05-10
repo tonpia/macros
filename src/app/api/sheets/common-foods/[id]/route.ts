@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateRow, deleteRow } from "@/lib/google-sheets";
 
+const TAB = "common-foods";
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -8,7 +10,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await req.json();
-    const ok = await updateRow("daily-goals", id, body);
+    const ok = await updateRow(TAB, id, body);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -22,7 +24,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const ok = await deleteRow("daily-goals", id);
+    const ok = await deleteRow(TAB, id);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e) {

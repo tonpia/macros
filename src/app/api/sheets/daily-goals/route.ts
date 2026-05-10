@@ -5,7 +5,7 @@ import type { DailyGoals } from "@/types";
 
 export async function GET() {
   try {
-    const goals = await getLatestRow<DailyGoals>("daily_goals");
+    const goals = await getLatestRow<DailyGoals>("daily-goals");
     return NextResponse.json(goals || null);
   } catch (e) {
     console.error("daily-goals GET error:", e);
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       carbs_g: body.carbs_g || 0,
       fat_g: body.fat_g || 0,
     };
-    await appendRow("daily_goals", entry as unknown as Record<string, unknown>);
+    await appendRow("daily-goals", entry as unknown as Record<string, unknown>);
     return NextResponse.json(entry, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
