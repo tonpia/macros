@@ -9,13 +9,34 @@ function getClient(): OpenRouter {
   return new OpenRouter({ apiKey });
 }
 
-export async function chatWithAI(
+function parseAIResponse(raw: string): AIResponse {
+  let jsonStr = raw.trim();
+  if (jsonStr.startsWith("```")) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+  }
+
+  try {
+    return JSON.parse(jsonStr) as AIResponse;
+  } catch {
+    return {
+      message: raw,
+      type: "general",
+      data: null,
+      confidence: "low",
+    };
+  }
+}
+
+/**
+ * Stream AI response as SSE events.
+ * Emits: { type: "reasoning", content } | { type: "content", content } | { type: "done", response: AIResponse }
+ */
+export async function* streamChatWithAI(
   userMessage: string,
   images?: string[],
-): Promise<AIResponse> {
+): AsyncGenerator<{ type: "reasoning" | "content" | "done"; content?: string; response?: AIResponse }> {
   const openrouter = getClient();
 
-  // Build user content parts using SDK types (camelCase field names)
   const contentParts: ChatContentItems[] = [];
 
   if (images && images.length > 0) {
@@ -31,7 +52,6 @@ export async function chatWithAI(
     contentParts.push({ type: "text", text: userMessage });
   }
 
-  // If only text, pass as plain string; otherwise pass content array
   const userContent: string | ChatContentItems[] =
     contentParts.length === 1 && contentParts[0].type === "text"
       ? userMessage
@@ -42,42 +62,54 @@ export async function chatWithAI(
     { role: "user", content: userContent },
   ];
 
-  // Use streaming to collect the full response
   const stream = await openrouter.chat.send({
     chatRequest: {
       model: "moonshotai/kimi-k2.6",
       messages,
       stream: true,
-      // Limit reasoning effort to reduce thinking latency
-      reasoning: { effort: "none" },
+      reasoning: { effort: "minimal" },
     },
   });
 
   let raw = "";
   for await (const chunk of stream) {
-    const c = chunk.choices[0]?.delta?.content;
-    if (c) raw += c;
+    const choice = chunk.choices[0];
+    if (!choice?.delta) continue;
+
+    // Check for reasoning content
+    const delta = choice.delta as Record<string, unknown>;
+    const reasoning = delta.reasoning as string | undefined;
+    if (reasoning) {
+      yield { type: "reasoning", content: reasoning };
+      continue;
+    }
+
+    const c = delta.content as string | undefined;
+    if (c) {
+      raw += c;
+      yield { type: "content", content: c };
+    }
   }
 
   if (!raw) {
     throw new Error("No response from AI");
   }
 
-  // Parse JSON from response, handling potential markdown code fences
-  let jsonStr = raw.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
+  const response = parseAIResponse(raw);
+  yield { type: "done", response };
+}
 
-  try {
-    return JSON.parse(jsonStr) as AIResponse;
-  } catch {
-    // If AI didn't return valid JSON, wrap it as a general response
-    return {
-      message: raw,
-      type: "general",
-      data: null,
-      confidence: "low",
-    };
+/** Non-streaming version for backward compatibility */
+export async function chatWithAI(
+  userMessage: string,
+  images?: string[],
+): Promise<AIResponse> {
+  let result: AIResponse | undefined;
+  for await (const event of streamChatWithAI(userMessage, images)) {
+    if (event.type === "done" && event.response) {
+      result = event.response;
+    }
   }
+  if (!result) throw new Error("No response from AI");
+  return result;
 }

@@ -81,6 +81,7 @@ export default function WorkoutsPage() {
         <ChatInterface
           onSaveWorkout={handleSaveWorkout}
           placeholder="Describe your workout or attach gym photos..."
+          sessionKey="workouts"
         />
       )}
 

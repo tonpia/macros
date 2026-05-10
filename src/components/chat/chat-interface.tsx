@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { generateId, nowISO } from "@/lib/utils";
 import type {
   ChatMessage as ChatMessageType,
@@ -17,6 +17,40 @@ interface ChatInterfaceProps {
   onSaveWorkout?: (items: WorkoutEstimation[]) => void;
   onSaveBody?: (data: BodyEstimation) => void;
   placeholder?: string;
+  sessionKey?: string; // unique key for localStorage persistence
+}
+
+function getStorageKey(sessionKey: string) {
+  return `chat_session_${sessionKey}`;
+}
+
+function loadMessages(sessionKey: string): ChatMessageType[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = localStorage.getItem(getStorageKey(sessionKey));
+    if (!stored) return [];
+    const messages = JSON.parse(stored) as ChatMessageType[];
+    // Clear any stale streaming state from previous session
+    return messages.map((m) => ({ ...m, isStreaming: false, isReasoning: false }));
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(sessionKey: string, messages: ChatMessageType[]) {
+  if (typeof window === "undefined") return;
+  try {
+    // Don't persist images in localStorage to save space
+    const toStore = messages.map((m) => ({
+      ...m,
+      images: undefined, // strip base64 images
+      isStreaming: false,
+      isReasoning: false,
+    }));
+    localStorage.setItem(getStorageKey(sessionKey), JSON.stringify(toStore));
+  } catch {
+    // localStorage full or unavailable — silently ignore
+  }
 }
 
 export default function ChatInterface({
@@ -24,16 +58,45 @@ export default function ChatInterface({
   onSaveWorkout,
   onSaveBody,
   placeholder = "Describe your food, workout, or attach photos...",
+  sessionKey = "default",
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [isReasoning, setIsReasoning] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
+
+  // Load messages from localStorage on mount
+  useEffect(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      const stored = loadMessages(sessionKey);
+      if (stored.length > 0) {
+        setMessages(stored);
+      }
+    }
+  }, [sessionKey]);
+
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    if (initialized.current && messages.length > 0) {
+      saveMessages(sessionKey, messages);
+    }
+  }, [messages, sessionKey]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamingText]);
+
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    setStreamingText("");
+    setIsReasoning(false);
+    localStorage.removeItem(getStorageKey(sessionKey));
+  }, [sessionKey]);
 
   async function handleSend() {
     if (!input.trim() && pendingImages.length === 0) return;
@@ -50,6 +113,8 @@ export default function ChatInterface({
     setInput("");
     setPendingImages([]);
     setLoading(true);
+    setStreamingText("");
+    setIsReasoning(false);
 
     try {
       const res = await fetch("/api/ai/chat", {
@@ -63,17 +128,70 @@ export default function ChatInterface({
 
       if (!res.ok) throw new Error("AI request failed");
 
-      const aiResponse: AIResponse = await res.json();
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
 
-      const assistantMsg: ChatMessageType = {
-        id: generateId(),
-        role: "assistant",
-        content: aiResponse.message,
-        aiResponse,
-        timestamp: nowISO(),
-      };
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      let finalResponse: AIResponse | undefined;
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split("\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+
+            if (event.type === "reasoning") {
+              setIsReasoning(true);
+            } else if (event.type === "content") {
+              setIsReasoning(false);
+              accumulated += event.content;
+              setStreamingText(accumulated);
+            } else if (event.type === "done") {
+              finalResponse = event.response;
+            } else if (event.type === "error") {
+              throw new Error(event.content);
+            }
+          } catch (parseErr) {
+            // Ignore malformed SSE lines
+            if (parseErr instanceof Error && parseErr.message !== "error") {
+              // Re-throw actual errors from the AI
+              if (jsonStr.includes('"type":"error"')) {
+                throw parseErr;
+              }
+            }
+          }
+        }
+      }
+
+      if (finalResponse) {
+        const assistantMsg: ChatMessageType = {
+          id: generateId(),
+          role: "assistant",
+          content: finalResponse.message,
+          aiResponse: finalResponse,
+          timestamp: nowISO(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      } else {
+        // Fallback: use accumulated text as message
+        const assistantMsg: ChatMessageType = {
+          id: generateId(),
+          role: "assistant",
+          content: accumulated || "No response received.",
+          timestamp: nowISO(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      }
     } catch (err) {
       const errorMsg: ChatMessageType = {
         id: generateId(),
@@ -84,6 +202,8 @@ export default function ChatInterface({
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
+      setStreamingText("");
+      setIsReasoning(false);
     }
   }
 
@@ -106,6 +226,19 @@ export default function ChatInterface({
 
   return (
     <div className="flex flex-col rounded-xl border border-gray-800 bg-gray-900">
+      {/* Header with New Chat button */}
+      {messages.length > 0 && (
+        <div className="flex items-center justify-end border-b border-gray-800 px-4 py-2">
+          <button
+            onClick={handleNewChat}
+            disabled={loading}
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-400 transition hover:bg-gray-800 hover:text-white disabled:opacity-50"
+          >
+            New Chat
+          </button>
+        </div>
+      )}
+
       {/* Messages area */}
       <div className="max-h-96 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && (
@@ -126,14 +259,25 @@ export default function ChatInterface({
             onSaveBody={onSaveBody}
           />
         ))}
+
+        {/* Streaming / reasoning indicator */}
         {loading && (
           <div className="flex justify-start">
-            <div className="rounded-2xl bg-gray-800 px-4 py-3">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0.1s]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0.2s]" />
-              </div>
+            <div className="max-w-[85%] rounded-2xl bg-gray-800 px-4 py-3">
+              {isReasoning ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-500 border-t-blue-400" />
+                  <span className="text-xs text-gray-400">Thinking...</span>
+                </div>
+              ) : streamingText ? (
+                <p className="text-sm whitespace-pre-wrap text-gray-100">{streamingText}</p>
+              ) : (
+                <div className="flex gap-1">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0.1s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0.2s]" />
+                </div>
+              )}
             </div>
           </div>
         )}

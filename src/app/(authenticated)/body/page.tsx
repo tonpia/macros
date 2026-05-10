@@ -99,6 +99,7 @@ export default function BodyPage() {
         <ChatInterface
           onSaveBody={handleSaveBody}
           placeholder="Send a body photo for AI analysis..."
+          sessionKey="body"
         />
       </div>
     </div>

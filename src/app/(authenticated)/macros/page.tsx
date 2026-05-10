@@ -167,6 +167,7 @@ export default function MacrosPage() {
         <ChatInterface
           onSaveFood={handleSaveFood}
           placeholder="Describe what you ate or attach food photos..."
+          sessionKey="macros"
         />
       )}
 

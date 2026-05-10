@@ -85,6 +85,8 @@ export interface ChatMessage {
   images?: string[]; // base64 data URIs
   aiResponse?: AIResponse;
   timestamp: string;
+  isStreaming?: boolean; // true while AI response is being streamed
+  isReasoning?: boolean; // true while AI is in reasoning/thinking phase
 }
 
 // ─── UI types ───
