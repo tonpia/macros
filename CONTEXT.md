@@ -11,7 +11,7 @@ A personal fitness and nutrition tracker. The user logs food, workouts, and body
 - **Next.js version is non-standard.** Read `node_modules/next/dist/docs/` before writing any Next.js code. Do not assume APIs match your training data.
 - **Single user app.** No user IDs, no multi-tenancy. Auth is a simple password stored in `APP_PASSWORD` env var.
 - **Google Sheets is the database.** There is no SQL DB. All reads/writes go through `src/lib/google-sheets.ts`.
-- **AI via OpenRouter.** The model is Kimi K2.6 accessed through OpenRouter. Do not swap providers without being asked.
+- **AI via OpenRouter.** The model is `xiaomi/mimo-v2.5` accessed through OpenRouter. Model and reasoning config live in `src/lib/ai-config.ts`. Do not swap providers without being asked.
 
 ## Architecture
 

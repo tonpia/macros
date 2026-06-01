@@ -2,6 +2,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import type { ChatMessages, ChatContentItems } from "@openrouter/sdk/models";
 import { buildSystemPrompt } from "./ai-prompts";
 import type { AIResponse, CommonFood } from "@/types";
+import { AI_MODEL, AI_REASONING_EFFORT } from "./ai-config";
 
 function getClient(): OpenRouter {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -67,10 +68,10 @@ export async function* streamChatWithAI(
 
   const stream = await openrouter.chat.send({
     chatRequest: {
-      model: "moonshotai/kimi-k2.6",
+      model: AI_MODEL,
       messages,
       stream: true,
-      reasoning: { effort: "medium" },
+      reasoning: { effort: AI_REASONING_EFFORT },
     },
   });
 
